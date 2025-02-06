@@ -44,7 +44,6 @@ with
       datetime(timestamp_seconds(cast(event_timestamp / 1000000 as int64)), '${constants.REPORTING_TIME_ZONE}') as event_datetime, --ga4 property reporting time zone
       cast(event_date as date format 'yyyymmdd') as event_date, --event_date is already reported in ga4 property reporting time zone
       lower(replace(trim(event_name), " ", "_")) as event_name,
-      event_params,
       event_previous_timestamp,
       event_value_in_usd,
       event_bundle_sequence_id,
@@ -107,6 +106,54 @@ with
       ${helpers.unnestColumn('event_params', 'engagement_time_msec', 'int_value')} as engagement_time_msec,
       ${helpers.unnestColumn('event_params', 'page_title')} as page_title,
       ${helpers.unnestColumn('event_params', 'page_referrer')} as page_referrer,
+
+      CONCAT(user_pseudo_id,${helpers.unnestColumn('event_params', 'ga_session_id', 'int_value')}) as session_id,
+    
+      STRUCT(
+      ${helpers.unnestColumn('event_params', 'destination_url')} as destination_url,
+      ${helpers.unnestColumn('event_params', 'button_text')} as button_text,
+      ${helpers.unnestColumn('event_params', 'step_title')} as step_title,
+      ${helpers.unnestColumn('event_params', 'application_status')} as 	application_status,
+      ${helpers.unnestColumn('event_params', 'top_section')} as top_section,
+      ${helpers.unnestColumn('event_params', 'link_text')} as link_text,
+      ${helpers.unnestColumn('event_params', 'sub_section')} as sub_section,
+      ${helpers.unnestColumn('event_params', 'payment_method')} as payment_method,
+      ${helpers.unnestColumn('event_params', 'error_fields')} as error_fields, -- added 
+      ${helpers.unnestColumn('event_params', 'error_fields_hits')} as error_fields_hits, -- added
+      ${helpers.unnestColumn('event_params', 'modification')} as modification,-- a custom dimension with no value in ica banken
+      ${helpers.unnestColumn('event_params', 'insurance_type')} as insurance_type,--added
+
+      ${helpers.unnestColumn('event_params', 'currency')} as currency,
+
+      ${helpers.unnestColumn('event_params', 'step', 'int_value')} as step,
+
+      ${helpers.unnestColumn('event_params', 'value', 'int_value')} as value,
+
+      ${helpers.unnestColumn('event_params', 'add_on_product')} as add_on_product,
+      ${helpers.unnestColumn('event_params', 'annual_cost')} as annual_cost,
+      ${helpers.unnestColumn('event_params', 'article')} as article,
+      ${helpers.unnestColumn('event_params', 'basic_deductible')} as basic_deductible,
+      ${helpers.unnestColumn('event_params', 'blocking_question_title')} as blocking_question_title,
+      ${helpers.unnestColumn('event_params', 'changed_sub_product')} as changed_sub_product,
+      ${helpers.unnestColumn('event_params', 'deductible_hull')} as deductible_hull,
+      ${helpers.unnestColumn('event_params', 'info_component')} as info_component,
+      ${helpers.unnestColumn('event_params', 'hits')} as hits,
+      ${helpers.unnestColumn('event_params', 'info_component_value')} as info_component_value,
+      ${helpers.unnestColumn('event_params', 'insurance_amount')} as insurance_amount,
+      ${helpers.unnestColumn('event_params', 'insurance_product')} as insurance_product,
+      ${helpers.unnestColumn('event_params', 'insurance_product_category')} as insurance_product_category,
+      ${helpers.unnestColumn('event_params', 'insurance_sub_product')} as insurance_sub_product,
+      ${helpers.unnestColumn('event_params', 'living_space')} as living_space,
+      ${helpers.unnestColumn('event_params', 'mileage')} as mileage,
+      ${helpers.unnestColumn('event_params', 'model_year')} as model_year,
+      ${helpers.unnestColumn('event_params', 'number_of_residents')} as number_of_residents,
+      ${helpers.unnestColumn('event_params', 'start_date')} as start_date,
+      ${helpers.unnestColumn('event_params', 'sublet')} as sublet,
+      ${helpers.unnestColumn('event_params', 'young_driver')} as young_driver,
+      ${helpers.unnestColumn('event_params', 'application_response_time', 'int_value')} as application_response_time,
+      ${helpers.unnestColumn('event_params', 'insurance_annual_cost', 'int_value')} as insurance_annual_cost
+      ) as event_params,
+     -- no user_params
       (
       select
         as struct ${helpers.unnestColumn('event_params', 'source')} as source,

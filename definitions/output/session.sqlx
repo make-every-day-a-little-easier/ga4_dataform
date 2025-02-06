@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 config {
-    type: "table",
+    type: "incremental",
     schema: constants.OUTPUT_DATASET,
     description: "Sessions model, outputs one row per user session.",
     bigquery: {
@@ -22,6 +22,20 @@ config {
         clusterBy: ["user_key", "ga_session_key"]
     }
 }
+
+pre_operations {
+  declare event_date_checkpoint default (
+    ${when(incremental(),
+      `select max(session_start_date) -3 from ${self()}`,
+      `select cast('${constants.START_DATE}' as date format 'yyyymmdd')`)
+    }
+  )
+  ---
+  ${when(incremental(),
+    `delete from ${self()} where session_start_date >= event_date_checkpoint`)
+  }
+}
+
 
 with int_session as (
     select
@@ -40,9 +54,41 @@ with int_session as (
         a.session_traffic_source_last_click.cross_channel_default_channel_group as cross_channel_default_channel_group, 
         a.session_traffic_source_last_click.cross_channel_primary_channel_group as cross_channel_primary_channel_group,
         a.session_traffic_source_last_click.cross_channel_source as cross_channel_source,
-        a.session_traffic_source_last_click.cross_channel_medium as cross_channel_medium
+        a.session_traffic_source_last_click.cross_channel_medium as cross_channel_medium,
+        a.session_traffic_source_last_click.manual_term as manual_term,
+        a.session_traffic_source_last_click.manual_content as manual_content
     ) as session_traffic_source_last_click
   from ${ref('int_event')} a
+),
+
+pages as (
+    select
+        user_key,
+        ga_session_key,
+        session_id,
+        string_agg(page_location order by event_timestamp) as pages_in_session,
+        array_agg(page_location ignore nulls order by event_timestamp limit 1)[SAFE_OFFSET(0)] as landing_page,
+        string_agg(page_referrer order by event_timestamp) as page_referrer
+    from ${ref('int_event')}
+    where event_name = 'page_view'
+    group by 
+        user_key,
+        ga_session_key,
+        session_id
+),
+
+events as (
+    select
+        user_key,
+        ga_session_key,
+        session_id,
+        string_agg(event_name order by event_timestamp) as events_in_session
+    from ${ref('int_event')}
+    where event_name != 'page_view'
+    group by 
+        user_key,
+        ga_session_key,
+        session_id
 )
 , final as (
   select
@@ -50,6 +96,10 @@ with int_session as (
     a.ga_session_key,
     a.ga_session_id,
     a.user_pseudo_id,
+    p.session_id,
+    p.pages_in_session,
+    e.events_in_session,
+    p.landing_page,
     a.session_traffic_source_last_click,
     min(datetime(timestamp_seconds(a.ga_session_id), '${constants.REPORTING_TIME_ZONE}')) as session_start_datetime,
     date(min(datetime(timestamp_seconds(a.ga_session_id), '${constants.REPORTING_TIME_ZONE}'))) as session_start_date,
@@ -57,12 +107,22 @@ with int_session as (
     round(sum(a.engagement_time_msec / 1000), 2) as engagement_time_seconds,
     min(datetime(timestamp_seconds(cast(a.user_first_touch_timestamp / 1000000 as int64)), '${constants.REPORTING_TIME_ZONE}')) as user_first_visit_datetime
   from int_session a
+  left join pages p
+      on p.user_key = a.user_key
+      and p.ga_session_key = a.ga_session_key
+    left join events e
+      on e.user_key = a.user_key
+      and e.ga_session_key = a.ga_session_key
   group by
     a.user_key,
     a.ga_session_key,
     a.ga_session_id,
     a.user_pseudo_id,
-    a.session_traffic_source_last_click
+    a.session_traffic_source_last_click,
+    p.session_id,
+    p.pages_in_session,
+    e.events_in_session,
+    p.landing_page 
 )
 
 select
