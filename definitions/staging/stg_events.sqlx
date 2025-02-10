@@ -18,6 +18,7 @@ config {
   type: "incremental",
   schema: constants.STAGING_DATASET,
   description: "Staging model for GA4 events_* table. Basic column casting and value extractions are performed here",
+  tags: ["all"],
   bigquery: {
     partitionBy: "event_date",
     clusterBy: ["user_pseudo_id", "ga_session_id"]
@@ -106,9 +107,7 @@ with
       ${helpers.unnestColumn('event_params', 'engagement_time_msec', 'int_value')} as engagement_time_msec,
       ${helpers.unnestColumn('event_params', 'page_title')} as page_title,
       ${helpers.unnestColumn('event_params', 'page_referrer')} as page_referrer,
-
       CONCAT(user_pseudo_id,${helpers.unnestColumn('event_params', 'ga_session_id', 'int_value')}) as session_id,
-    
       STRUCT(
       ${helpers.unnestColumn('event_params', 'destination_url')} as destination_url,
       ${helpers.unnestColumn('event_params', 'button_text')} as button_text,
@@ -118,35 +117,23 @@ with
       ${helpers.unnestColumn('event_params', 'link_text')} as link_text,
       ${helpers.unnestColumn('event_params', 'sub_section')} as sub_section,
       ${helpers.unnestColumn('event_params', 'payment_method')} as payment_method,
-      ${helpers.unnestColumn('event_params', 'error_fields')} as error_fields, -- added 
-      ${helpers.unnestColumn('event_params', 'error_fields_hits')} as error_fields_hits, -- added
-      ${helpers.unnestColumn('event_params', 'modification')} as modification,-- a custom dimension with no value in ica banken
-      ${helpers.unnestColumn('event_params', 'insurance_type')} as insurance_type,--added
-
-      ${helpers.unnestColumn('event_params', 'currency')} as currency,
-
+      ${helpers.unnestColumn('event_params', 'error_fields')} as error_fields,
+      ${helpers.unnestColumn('event_params', 'error_fields_hits')} as error_fields_hits,
+      ${helpers.unnestColumn('event_params', 'insurance_type')} as insurance_type,
       ${helpers.unnestColumn('event_params', 'step', 'int_value')} as step,
-
-      ${helpers.unnestColumn('event_params', 'value', 'int_value')} as value,
-
       ${helpers.unnestColumn('event_params', 'add_on_product')} as add_on_product,
-      ${helpers.unnestColumn('event_params', 'annual_cost')} as annual_cost,
       ${helpers.unnestColumn('event_params', 'article')} as article,
       ${helpers.unnestColumn('event_params', 'basic_deductible')} as basic_deductible,
       ${helpers.unnestColumn('event_params', 'blocking_question_title')} as blocking_question_title,
       ${helpers.unnestColumn('event_params', 'changed_sub_product')} as changed_sub_product,
       ${helpers.unnestColumn('event_params', 'deductible_hull')} as deductible_hull,
       ${helpers.unnestColumn('event_params', 'info_component')} as info_component,
-      ${helpers.unnestColumn('event_params', 'hits')} as hits,
       ${helpers.unnestColumn('event_params', 'info_component_value')} as info_component_value,
       ${helpers.unnestColumn('event_params', 'insurance_amount')} as insurance_amount,
       ${helpers.unnestColumn('event_params', 'insurance_product')} as insurance_product,
       ${helpers.unnestColumn('event_params', 'insurance_product_category')} as insurance_product_category,
       ${helpers.unnestColumn('event_params', 'insurance_sub_product')} as insurance_sub_product,
-      ${helpers.unnestColumn('event_params', 'living_space')} as living_space,
       ${helpers.unnestColumn('event_params', 'mileage')} as mileage,
-      ${helpers.unnestColumn('event_params', 'model_year')} as model_year,
-      ${helpers.unnestColumn('event_params', 'number_of_residents')} as number_of_residents,
       ${helpers.unnestColumn('event_params', 'start_date')} as start_date,
       ${helpers.unnestColumn('event_params', 'sublet')} as sublet,
       ${helpers.unnestColumn('event_params', 'young_driver')} as young_driver,
@@ -176,6 +163,7 @@ with
       and _table_suffix not like "%fresh%"
       and cast(_table_suffix as date format 'yyyymmdd') >= event_date_checkpoint
   )
+  
 select
   *
 from

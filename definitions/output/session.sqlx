@@ -13,10 +13,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+ 
 config {
     type: "incremental",
     schema: constants.OUTPUT_DATASET,
     description: "Sessions model, outputs one row per user session.",
+    tags: ["all"],
     bigquery: {
         partitionBy: "session_start_date",
         clusterBy: ["user_key", "ga_session_key"]
