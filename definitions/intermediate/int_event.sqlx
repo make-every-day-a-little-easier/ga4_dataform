@@ -13,10 +13,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 config {
     type: "incremental",
     schema: constants.INTERMEDIATE_DATASET,
     description: "Intermediate model that updates staging events data.",
+    tags: ["all"],
     bigquery: {
         partitionBy: "event_date",
         clusterBy: ["user_key", "ga_session_key"]
@@ -62,6 +64,8 @@ with staging as (
     ${when(constants.GADS_GET_DATA, `left join ${constants.INTERMEDIATE_DATASET}.int_ads_click_campaign as int_ads_click_campaign on stg_events.collected_traffic_source.gclid = int_ads_click_campaign.gclid`)}
     where event_date >= event_date_checkpoint
 )
+
 select
-    *
-from staging
+  *
+from 
+  staging

@@ -18,6 +18,7 @@ config {
   type: "incremental",
   schema: constants.OUTPUT_DATASET,
   description: "Events model, outputs one row per event, in addition to event attribution fields.",
+  tags: ["all"],
   bigquery: {
       partitionBy: "event_date"
   }
@@ -44,8 +45,9 @@ with int_event as (
   order by
     user_key,
     event_timestamp desc
-)
-, final as (
+), 
+
+final as (
   select
     a.*,
     if(coalesce(nullif(a.collected_traffic_source.source, '(direct)'), nullif(a.collected_traffic_source.medium, '(none)'), nullif(a.collected_traffic_source.campaign, '(direct)')) is null,
@@ -72,10 +74,14 @@ with int_event as (
     if(event_name = 'page_view', coalesce(first_value(if(event_name = 'page_view' and not regexp_contains(page_location, 'logga-in|utloggad'), regexp_extract(page_location, r'[^/]+//[^/]+(/[^?]*)'), null) ignore nulls) over (partition by a.session_id order by event_timestamp ASC ROWS BETWEEN 1 FOLLOWING AND UNBOUNDED FOLLOWING ), '(exit)' ), null ) as next_page_location
 
   from
-    int_event as a )
+    int_event as a 
+)
+
 select
   * except(last_non_direct_traffic_source),
-  (select as struct
+  (
+  select 
+    as struct
     ifnull(last_non_direct_traffic_source.source, '(direct)') as source,
     ifnull(last_non_direct_traffic_source.medium, '(none)') as medium,
     ifnull(last_non_direct_traffic_source.campaign, '(direct)') as campaign
