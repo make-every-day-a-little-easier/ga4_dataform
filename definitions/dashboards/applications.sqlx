@@ -42,6 +42,11 @@ with pre_applications as (
     * except (event_date, event_previous_timestamp, event_bundle_sequence_id, event_server_timestamp_offset, user_id, user_pseudo_id, user_first_touch_timestamp, geo, app_info, is_active_user, traffic_source, stream_id, platform, ecommerce, ga_session_id, ga_session_number, engagement_time_msec, page_title, page_referrer, session_engaged, event_datetime,  user_key, ga_session_key, event_traffic_source, collected_traffic_source, last_non_direct_traffic_source, device),
     event_date as date,
     device.category as device,
+     REGEXP_REPLACE(
+        SPLIT(page_location, '?')[OFFSET(0)],
+        r'^https?://[^/]+',
+        ''
+    ) AS page_path,
     case /* edit this to edit which event_name and page is associated with which type of product */
     -- fordon --
       when regexp_contains(event_params.insurance_product, 'bil') or regexp_contains(page_location, '\\/bilforsakring') then 'Bil'
@@ -101,6 +106,7 @@ select
   a.date,
   a.device,
   a.page_location,
+  a.page_path,
   a.session_id,
   a.event_timestamp,
   a.previous_page_location,
@@ -120,6 +126,7 @@ group by
   date,
   device,
   page_location,
+  page_path,
   a.session_id,
   event_timestamp,
   previous_page_location,
