@@ -1,0 +1,29 @@
+config {
+    type: 'table',
+    bigquery: {
+        partitionBy: "date"
+    }
+}
+
+with errors as (
+  select
+    parse_date('%Y%m%d', event_date) as date,
+    bigfunctions.eu.parse_url(
+      (select value.string_value from unnest(event_params) where key = 'page_location')
+    ).path as page_path,
+    (select value.string_value from unnest(event_params) where key = 'error_fields') as error_fields
+  from
+    ${ref('events_*')}
+  where
+    _table_suffix = '${constants.DUMMY_START_DATE}' and
+    (select value.string_value from unnest(event_params) where key = 'error_fields') is not null
+)
+
+select
+  date,
+  page_path,
+  error_fields,
+  count(*) as errors
+from
+  errors, unnest(split(error_fields, ',')) as error_fields
+group by all
