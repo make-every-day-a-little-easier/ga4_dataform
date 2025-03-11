@@ -21,7 +21,8 @@ const STAGING_DATASET = "ga4_dataform_staging";
 const INTERMEDIATE_DATASET = "ga4_dataform_intermediate";
 const OUTPUT_DATASET = "ga4_dataform_output";
 const DASHBOARDS_DATASET = "ga4_dataform_dashboards";
-const START_DATE = 20240910; /* data will be pulled starting this date */
+const START_DATE = 20240101; /* data will be pulled starting this date */
+const DUMMY_START_DATE = 20250110;
 const ALL_EVENTS_LOOKBACK_WINDOW = 7776000; /* number of lookback days in seconds when looking at last non-direct session source and non-acquisition conversion events, default is 90 days (86400 seconds in a day)*/
 const AQUISITION_EVENTS_LOOKBACK_WINDOW = 2592000; /* number of lookback days in seconds when looking at acquisition conversion events (first_open and first_visit), default is 30 days (86400 seconds in a day)*/
 
@@ -34,6 +35,7 @@ const GADS_CUSTOMER_ID = ""; /* your Google Ads customer id, excluding the dashe
 module.exports = {
     SOURCE_PROJECT,
     SOURCE_DATASET,
+    DUMMY_START_DATE,
     REPORTING_TIME_ZONE,
     STAGING_DATASET,
     INTERMEDIATE_DATASET,
