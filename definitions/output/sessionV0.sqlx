@@ -1,0 +1,182 @@
+/**
+ * Copyright 2024 Google LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+ 
+config {
+    type: "incremental",
+    schema: constants.OUTPUT_DATASET,
+    description: "Sessions model, outputs one row per user session.",
+    tags: ["all","ga4"],
+    bigquery: {
+        partitionBy: "session_start_date",
+        clusterBy: ["user_key", "ga_session_key"]
+    }
+}
+
+pre_operations {
+  declare event_date_checkpoint default (
+    ${when(incremental(),
+      `select max(session_start_date) -3 from ${self()}`,
+      `select cast('${constants.START_DATE}' as date format 'yyyymmdd')`)
+    }
+  )
+  ---
+  ${when(incremental(),
+    `delete from ${self()} where session_start_date >= event_date_checkpoint`)
+  }
+}
+
+with session_first_last_source as (
+    select
+        user_key,
+        ga_session_key,
+        ga_session_id,
+        user_pseudo_id,
+        session_id,
+        --session first traffic source
+        array_agg(
+            if(coalesce(nullif(collected_traffic_source.source, '(direct)'), nullif(collected_traffic_source.medium, '(none)'), nullif(collected_traffic_source.campaign, '(direct)')) is not null,
+                collected_traffic_source,
+                null
+            )
+            order by
+                event_timestamp asc
+            limit 1
+        ) [safe_offset(0)] as first_traffic_source,
+        --session last non-direct traffic source within the session
+        array_agg(
+                if(coalesce(nullif(collected_traffic_source.source, '(direct)'), nullif(collected_traffic_source.medium, '(none)'), nullif(collected_traffic_source.campaign, '(direct)')) is not null,
+                    collected_traffic_source,
+                    null
+            ) ignore nulls
+            order by
+                event_timestamp desc
+            limit 1
+        ) [safe_offset(0)] as last_non_null_traffic_source
+    from ${ref('int_event')}
+    where 
+    event_date >= event_date_checkpoint
+    --event_date = '2024-10-10' /* Simply for testing purposes */
+    and ga_session_key is not null
+    and event_name not in ('session_start') --this condition could be commented/removed if looking at data post November 2, 2023 when it started being populated.
+    group by
+        user_key,
+        ga_session_key,
+        ga_session_id,
+        user_pseudo_id,
+        session_id
+), 
+
+pages as (
+    select
+        user_key,
+        ga_session_key,
+        session_id,
+        string_agg(page_location order by event_timestamp) as pages_in_session,
+        array_agg(page_location ignore nulls order by event_timestamp limit 1)[SAFE_OFFSET(0)] as landing_page,
+        string_agg(page_referrer order by event_timestamp) as page_referrer
+    from ${ref('int_event')}
+    where event_name = 'page_view'
+    group by 
+        user_key,
+        ga_session_key,
+        session_id
+),
+
+events as (
+    select
+        user_key,
+        ga_session_key,
+        session_id,
+        string_agg(event_name order by event_timestamp) as events_in_session
+    from ${ref('int_event')}
+    where event_name != 'page_view'
+    group by 
+        user_key,
+        ga_session_key,
+        session_id
+),
+
+get_last_non_direct_traffic_source as (
+  select
+    a.*,
+    b.session_start_datetime,
+    date(b.session_start_datetime) as session_start_date,
+    b.has_session_start_event,
+    b.session_engaged,
+    b.engagement_time_seconds,
+    b.user_first_visit_datetime,
+    if(coalesce(nullif(a.first_traffic_source.source, '(direct)'), nullif(a.first_traffic_source.medium, '(none)'), nullif(a.first_traffic_source.campaign, '(direct)')) is null,
+      last_value(if(coalesce(nullif(a.last_non_null_traffic_source.source, '(direct)'), nullif(a.last_non_null_traffic_source.medium, '(none)'), nullif(a.last_non_null_traffic_source.campaign, '(direct)')) is not null,
+                    a.last_non_null_traffic_source,
+                    null) ignore nulls)
+      over(partition by a.user_key order by a.ga_session_id
+      range between ${constants.ALL_EVENTS_LOOKBACK_WINDOW} preceding and 1 preceding
+      ),
+      a.first_traffic_source
+     ) as last_non_direct_traffic_source
+  from
+    session_first_last_source a
+    join ${ref('int_session')} b
+    on a.user_key = b.user_key
+    and a.ga_session_key = b.ga_session_key
+), 
+
+add_channel_group as (
+  select
+    t.user_key,
+    t.ga_session_key,
+    t.ga_session_id,
+    t.user_pseudo_id,
+    t.session_id,
+    p.pages_in_session,
+    e.events_in_session,
+    p.landing_page,
+    t.session_start_datetime,
+    t.session_start_date,
+    t.session_engaged,
+    t.engagement_time_seconds,
+    t.user_first_visit_datetime,
+    (
+      select
+        as struct
+        if(not t.has_session_start_event, '(not set)', ifnull(t.first_traffic_source.source, '(direct)')) as source,
+        if(not t.has_session_start_event, '(not set)', ifnull(t.first_traffic_source.medium, '(none)')) as medium,
+        if(not t.has_session_start_event, '(not set)', ifnull(t.first_traffic_source.campaign, '(direct)')) as campaign,
+        if(not t.has_session_start_event, '(not set)', ifnull(t.first_traffic_source.manual_term, '(direct)')) as term,
+        if(not t.has_session_start_event, '(not set)', ifnull(t.first_traffic_source.manual_content, '(direct)')) as content
+    ) as first_traffic_source,
+    (
+      select
+        as struct
+        if(not t.has_session_start_event, '(not set)', ifnull(t.last_non_direct_traffic_source.source, '(direct)')) as source,
+        if(not t.has_session_start_event, '(not set)', ifnull(t.last_non_direct_traffic_source.medium, '(none)')) as medium,
+        if(not t.has_session_start_event, '(not set)', ifnull(t.last_non_direct_traffic_source.campaign, '(direct)')) as campaign,
+        if(not t.has_session_start_event, '(not set)', ifnull(t.last_non_direct_traffic_source.manual_term, '(direct)')) as term,
+        if(not t.has_session_start_event, '(not set)', ifnull(t.last_non_direct_traffic_source.manual_content, '(direct)')) as content
+    ) as last_non_direct_traffic_source,
+  from get_last_non_direct_traffic_source t
+    left join pages p
+      on p.user_key = t.user_key
+      and p.ga_session_key = t.ga_session_key
+    left join events e
+      on e.user_key = t.user_key
+      and e.ga_session_key = t.ga_session_key
+
+)
+
+select
+  *
+from add_channel_group

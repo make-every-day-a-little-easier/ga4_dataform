@@ -1,0 +1,141 @@
+/**
+ * Copyright 2024 Google LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+config {
+    type: "incremental",
+    schema: constants.DASHBOARDS_DATASET,
+    description: "This table includes all events connected to applications",
+    tags: ["all"],
+    bigquery: {
+      partitionBy: "date"
+  }
+}
+
+pre_operations {
+  declare event_date_checkpoint default (
+    ${when(incremental(),
+      `select max(date) -3 from ${self()}`,
+      `select cast('${constants.START_DATE}' as date format 'yyyymmdd')`)
+    }
+  )
+  ---
+  ${when(incremental(),
+    `delete from ${self()} where date >= event_date_checkpoint`)
+  }
+}
+
+with pre_applications as (
+  select
+    * except (event_date, event_previous_timestamp, event_bundle_sequence_id, event_server_timestamp_offset, user_id, user_pseudo_id, user_first_touch_timestamp, geo, app_info, is_active_user, traffic_source, stream_id, platform, ecommerce, ga_session_id, ga_session_number, engagement_time_msec, page_title, page_referrer, session_engaged, event_datetime,  user_key, ga_session_key, event_traffic_source, collected_traffic_source,last_non_direct_traffic_source, device),
+    event_date as date,
+    device.category as device,
+     REGEXP_REPLACE(
+        SPLIT(page_location, '?')[OFFSET(0)],
+        r'^https?://[^/]+',
+        ''
+    ) AS page_path,
+    case /* edit this to edit which event_name and page is associated with which type of product */
+    -- fordon --
+      when regexp_contains(event_params.insurance_product, 'bil') or regexp_contains(page_location, '\\/bilforsakring') then 'Bil'
+      when regexp_contains(event_params.insurance_product, 'motorcykel') or regexp_contains(page_location, '\\/motorcykel') then 'Motorcykel'
+      when regexp_contains(event_params.insurance_product, 'eu-moped') or regexp_contains(page_location, '\\/motorcykel') then 'EU-moped'
+      when regexp_contains(event_params.insurance_product, 'båt') or regexp_contains(page_location, '\\/batforsakring') then 'Båt'
+      when regexp_contains(event_params.insurance_product, 'moped') or regexp_contains(page_location, '\\/moped') then 'Moped'
+      when regexp_contains(event_params.insurance_product, 'husbil') or regexp_contains(page_location, '\\/husbil') then 'Husbil'
+      when regexp_contains(event_params.insurance_product, 'husvagn') or regexp_contains(page_location, '\\/husvagn') then 'Husvagn'
+      when regexp_contains(event_params.insurance_product, 'snoskoter') or regexp_contains(page_location, '\\/snoskoter') then 'Snöskoter'
+      when regexp_contains(event_params.insurance_product, 'släpvagn') or regexp_contains(page_location, '\\/slapvagn') then 'Släpvagn'
+    -- boende --
+      when regexp_contains(event_params.insurance_product, 'hyresrätt') or regexp_contains(page_location, '\\/hyresratt') then 'Hyresrätt'
+      when regexp_contains(event_params.insurance_product, 'villa och hus') or regexp_contains(page_location, '\\/hus-och-villa') then 'Villa och hus'
+      when regexp_contains(event_params.insurance_product, 'bostadsrätt') or regexp_contains(page_location, '\\/bostadsratt') then 'Bostadsrätt'
+      when regexp_contains(event_params.insurance_product, 'fritidshus') or regexp_contains(page_location, '\\/fritidshus') then 'Fritidshus'
+    -- person --
+      when regexp_contains(event_params.insurance_product, 'liv') or regexp_contains(page_location, '\\/livforsakring') then 'Liv'
+      when regexp_contains(event_params.insurance_product, 'olycksfall') or regexp_contains(page_location, '\\/olycksfallsforsakring') then 'Olycksfall'
+      when regexp_contains(event_params.insurance_product, 'barn') or regexp_contains(page_location, '\\/barnforsakring') then 'Barn'
+      when regexp_contains(event_params.insurance_product, 'gravid') or regexp_contains(page_location, '\\/gravidforsakring') then 'Gravid'
+      when regexp_contains(event_params.insurance_product, 'bolåneskydd') or regexp_contains(page_location, '\\/laneskydd') then 'Bolåneskydd'
+    -- djur --
+      when regexp_contains(event_params.insurance_product, 'hund') or regexp_contains(page_location, '\\/hundforsakring') then 'Hund'
+      when regexp_contains(event_params.insurance_product, 'katt') or regexp_contains(page_location, '\\/kattforsakring') then 'Katt'
+     else null end as product_name,
+    case /* edit this to edit which event_name and page is associated with which type of product */
+      when regexp_contains(event_params.insurance_product_category, 'fordon') or regexp_contains(page_location, '\\/bilforsakring|\\/andra-fordon') then 'Fordon'
+      when regexp_contains(event_params.insurance_product_category, 'boende') or regexp_contains(page_location, '\\/hemforsakring') then 'Boende'
+      when regexp_contains(event_params.insurance_product_category, 'person') or regexp_contains(page_location, '\\/person') then 'Person'
+      when regexp_contains(event_params.insurance_product_category, 'djur') or regexp_contains(page_location, '\\/djurforsakring') then 'Djur'
+     else null end as product_category_name
+  from
+    ${ref('event')}
+  where 
+    event_date >= event_date_checkpoint
+     -- event_date = '2024-10-10' /* Simply for testing purposes */
+),
+sessions as (
+  select
+    session_start_date,
+    concat(user_pseudo_id,ga_session_id) as session_id,
+    pages_in_session,
+    events_in_session,
+    landing_page,
+    concat(last_non_direct_traffic_source.source, " / ", last_non_direct_traffic_source.medium) as source_medium,
+    last_non_direct_traffic_source.campaign,
+    last_non_direct_traffic_source.term as utm_term,
+    last_non_direct_traffic_source.content as utm_content
+  from
+    ${ref('sessionV0')}
+)
+select
+  a.date,
+  a.device,
+  a.page_location,
+  a.page_path,
+  a.session_id,
+  a.event_timestamp,
+  a.previous_page_location,
+  a.next_page_location,
+  a.product_name,
+  a.product_category_name,
+  a.event_name,
+  s.* except (session_id, session_start_date, landing_page),
+  regexp_extract(landing_page, r'[^/]+//[^/]+(/[^?]*)') as landing_page,
+    a.event_params
+from
+  pre_applications a
+  join sessions s on a.session_id = s.session_id
+where 
+  source_medium != 'tagassistant.google.com / referral'
+group by  
+  date,
+  device,
+  page_location,
+  page_path,
+  a.session_id,
+  event_timestamp,
+  previous_page_location,
+  next_page_location,
+  product_name,
+  product_category_name,
+  event_name,
+  pages_in_session,
+  events_in_session,
+  landing_page,
+  source_medium,
+  campaign,
+  utm_term,
+  utm_content,
+  event_params
